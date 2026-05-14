@@ -506,7 +506,102 @@ public class ExceptionHandlingMiddleware
 
 ---
 
-## 8. DTOs
+## 8. Swagger — Documentação e Teste
+
+###安装
+
+```xml
+<PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
+```
+
+### Program.cs
+
+```csharp
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "LedgerFlow API",
+        Version = "v1",
+        Description = "API para gestão financeira pessoal e profissional"
+    });
+
+    // JWT Authentication no Swagger
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header using the Bearer scheme",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+```
+
+### Configuração (Development only)
+
+```csharp
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "LedgerFlow API v1");
+        c.RoutePrefix = "swagger"; // Acessível em /swagger
+    });
+}
+
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+
+app.Run();
+```
+
+### Endpoints Disponíveis
+
+| URL | Descrição |
+|-----|-----------|
+| `/swagger` | UI do Swagger (apenas em dev) |
+| `/swagger/v1/swagger.json` | OpenAPI spec JSON |
+
+### Testando a API
+
+1. Acesse `http://localhost:5000/swagger`
+2. Use **Authorize** para colar o token JWT
+3. Execute os endpoints diretamente pela UI
+
+### Configuration
+
+```json
+{
+  "Swagger": {
+    "Enabled": true
+  }
+}
+```
+
+---
+
+## 9. DTOs
 
 ```csharp
 // Auth
@@ -533,7 +628,7 @@ public record AccountSummaryDto(Guid Id, string Name, decimal Balance);
 
 ---
 
-## 9. Implementação — Ordem
+## 10. Implementação — Ordem
 
 1. Scaffold projetos + packages NuGet
 2. Domain → Entities + Enums
@@ -550,7 +645,7 @@ public record AccountSummaryDto(Guid Id, string Name, decimal Balance);
 
 ---
 
-## 10. Out of Scope
+## 11. Out of Scope
 
 - Jobs (Fase 3)
 - CSV import (Fase 3)
@@ -560,7 +655,7 @@ public record AccountSummaryDto(Guid Id, string Name, decimal Balance);
 
 ---
 
-## 11. Critérios de Conclusão
+## 12. Critérios de Conclusão
 
 - [ ] Arquitetura MVC + Services + Repositories funcionando
 - [ ] Auth com JWT funcionando
@@ -568,4 +663,5 @@ public record AccountSummaryDto(Guid Id, string Name, decimal Balance);
 - [ ] Transactions CRUD com transferência
 - [ ] Dashboard com cache Redis
 - [ ] Validação básica nos Services
+- [ ] Swagger disponível em /swagger
 - [ ] Build verde

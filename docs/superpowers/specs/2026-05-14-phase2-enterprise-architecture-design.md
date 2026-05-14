@@ -3,141 +3,65 @@
 **Date:** 2026-05-14
 **Phase:** 2/4
 **Prerequisite:** Fase 1 (MVP) completa
+**Arquitetura:** MVC + Services + Repositories (expansão)
 
 ---
 
 ## 1. Visão Geral
 
-Consolidação da arquitetura CQRS com separação completa de Commands e Queries, endurecimento de validação com FluentValidation, e estratégia de testes completa (unit + integration).
+ nesta fase vamos expandir a arquitetura com:
+- Validação robusta com FluentValidation
+- Logging e tratamento de erros centralizado
+- Testes unitários e de integração
+- Aperfeicoamento de services existentes
 
 ---
 
-## 2. CQRS — Read/Write Separation
+## 2. FluentValidation — Interfaces e Implementacoes
 
-### Antes (Fase 1)
-
-- Same model para leitura e escrita
-- handlers retornam a mesma entity com todos os campos
-
-### Depois (Fase 2)
-
-**Commands** (escrita) → recebem DTOs, retornam `Result<T>` com IDs ou status
-**Queries** (leitura) → recebem DTOs, retornam `Result<T>` com projection DTOs
-
-### Exemplo: Account
+### Validadores
 
 ```csharp
-// Command
-record CreateAccountCommand(string Name, decimal InitialBalance) : IRequest<Result<Guid>>;
-
-// Query
-record GetAccountDetailQuery(Guid Id) : IRequest<Result<AccountDetailDto>>;
-record GetAccountsListQuery(int Page, int PageSize) : IRequest<Result<PagedResult<AccountListDto>>>;
-
-// DTOs
-record AccountDetailDto(Guid Id, string Name, decimal Balance, DateTime CreatedAt);
-record AccountListDto(Guid Id, string Name, decimal Balance);
-```
-
----
-
-## 3. DTOs Layer
-
-**Location:** `src/LedgerFlow.Application/DTOs/`
-
-```
-DTOs/
-├── Auth/
-│   ├── RegisterRequest.cs
-│   ├── LoginRequest.cs
-│   ├── AuthResponse.cs
-│   └── RefreshTokenRequest.cs
-├── Accounts/
-│   ├── CreateAccountRequest.cs
-│   ├── UpdateAccountRequest.cs
-│   ├── AccountDetailDto.cs
-│   └── AccountListDto.cs
-├── Transactions/
-│   ├── CreateTransactionRequest.cs
-│   ├── UpdateTransactionRequest.cs
-│   ├── TransactionDetailDto.cs
-│   └── TransactionListDto.cs
-├── Dashboard/
-│   └── DashboardSummaryDto.cs
-└── Common/
-    └── PaginationRequest.cs
-```
-
----
-
-## 4. MediatR — Pipeline Refinements
-
-### Current (Fase 1)
-
-- `ValidationBehavior` — executa FluentValidation antes do handler
-
-### New (Fase 2)
-
-```csharp
-// LoggingBehavior — log request/response
-class LoggingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+// Application/Validators/AuthValidators.cs
+public class RegisterRequestValidator : AbstractValidator<RegisterRequest>
 {
-    private readonly ILogger<TRequest> _logger;
-    public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next) {
-        _logger.LogInformation("Handling {RequestType}", typeof(TRequest).Name);
-        var response = await next();
-        _logger.LogInformation("Handled {ResponseType}", typeof(TResponse).Name);
-        return response;
+    public RegisterRequestValidator()
+    {
+        RuleFor(x => x.Name)
+            .NotEmpty().WithMessage("Name is required")
+            .MaximumLength(100).WithMessage("Name cannot exceed 100 characters");
+
+        RuleFor(x => x.Email)
+            .NotEmpty().WithMessage("Email is required")
+            .EmailAddress().WithMessage("Invalid email format")
+            .MaximumLength(255);
+
+        RuleFor(x => x.Password)
+            .NotEmpty().WithMessage("Password is required")
+            .MinimumLength(8).WithMessage("Password must be at least 8 characters")
+            .Matches("[A-Z]").WithMessage("Password must contain at least one uppercase letter")
+            .Matches("[a-z]").WithMessage("Password must contain at least one lowercase letter")
+            .Matches("[0-9]").WithMessage("Password must contain at least one number");
     }
 }
 
-// TransactionBehavior — envolvimento UoW
-class TransactionBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+public class LoginRequestValidator : AbstractValidator<LoginRequest>
 {
-    private readonly IUnitOfWork _unitOfWork;
-    public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next) {
-        var result = await next();
-        await _unitOfWork.CommitAsync();
-        return result;
+    public LoginRequestValidator()
+    {
+        RuleFor(x => x.Email)
+            .NotEmpty().WithMessage("Email is required")
+            .EmailAddress().WithMessage("Invalid email format");
+
+        RuleFor(x => x.Password)
+            .NotEmpty().WithMessage("Password is required");
     }
 }
 
-// PerformanceBehavior — métricas de performance
-class PerformanceBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+// Application/Validators/AccountValidators.cs
+public class CreateAccountRequestValidator : AbstractValidator<CreateAccountRequest>
 {
-    private readonly ILogger<PerformanceBehavior<TRequest, TResponse>> _logger;
-    public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next) {
-        var sw = Stopwatch.StartNew();
-        var response = await next();
-        sw.Stop();
-        if (sw.ElapsedMilliseconds > 500) {
-            _logger.LogWarning("Long running request: {RequestType} took {Elapsed}ms",
-                typeof(TRequest).Name, sw.ElapsedMilliseconds);
-        }
-        return response;
-    }
-}
-```
-
-### Pipeline Order (before handlers)
-
-1. `ValidationBehavior` — 1º
-2. `LoggingBehavior` — 2º
-3. `PerformanceBehavior` — 3º
-4. `TransactionBehavior` — 4º (envolve o handler)
-5. Handler
-
----
-
-## 5. FluentValidation — Refinements
-
-### Custom Validators
-
-```csharp
-// Exemplo: AccountValidator
-public class CreateAccountCommandValidator : AbstractValidator<CreateAccountCommand>
-{
-    public CreateAccountCommandValidator()
+    public CreateAccountRequestValidator()
     {
         RuleFor(x => x.Name)
             .NotEmpty().WithMessage("Account name is required")
@@ -149,272 +73,432 @@ public class CreateAccountCommandValidator : AbstractValidator<CreateAccountComm
     }
 }
 
-// Exemplo: TransactionValidator com regras de domínio
-public class CreateTransactionCommandValidator : AbstractValidator<CreateTransactionCommand>
+// Application/Validators/TransactionValidators.cs
+public class CreateTransactionRequestValidator : AbstractValidator<CreateTransactionRequest>
 {
-    public CreateTransactionCommandValidator()
+    public CreateTransactionRequestValidator()
     {
+        RuleFor(x => x.AccountId)
+            .NotEmpty().WithMessage("Account is required");
+
         RuleFor(x => x.Amount)
-            .GreaterThan(0).WithMessage("Amount must be greater than zero");
+            .GreaterThan(0).WithMessage("Amount must be greater than zero")
+            .LessThanOrEqualTo(999999999).WithMessage("Amount exceeds maximum allowed");
 
         RuleFor(x => x.Type)
             .IsInEnum().WithMessage("Invalid transaction type");
 
         RuleFor(x => x)
             .Must(x => x.Type != TransactionType.Transfer || x.TransferToAccountId.HasValue)
-            .WithMessage("Transfer transactions require a destination account");
-
-        RuleFor(x => x)
+            .WithMessage("Transfer transactions require a destination account")
             .Must(x => x.Type != TransactionType.Transfer || x.AccountId != x.TransferToAccountId)
             .WithMessage("Cannot transfer to the same account");
+
+        RuleFor(x => x.Description)
+            .MaximumLength(500).WithMessage("Description cannot exceed 500 characters");
     }
 }
 ```
 
-### Validator Locations
+### Integracao com Services
 
-```
-Application/
-├── Auth/
-│   └── Commands/
-│       ├── Register/
-│       │   └── RegisterCommandValidator.cs
-│       └── Login/
-│           └── LoginCommandValidator.cs
-├── Accounts/
-│   └── Commands/
-│       ├── CreateAccount/
-│       │   └── CreateAccountCommandValidator.cs
-│       └── UpdateAccount/
-│           └── UpdateAccountCommandValidator.cs
-└── Transactions/
-    └── Commands/
-        ├── CreateTransaction/
-        │   └── CreateTransactionCommandValidator.cs
-        └── UpdateTransaction/
-            └── UpdateTransactionCommandValidator.cs
+```csharp
+public interface IValidationService
+{
+    Task<Result<T>> ValidateAsync<T>(T request);
+}
+
+public class ValidationService : IValidationService
+{
+    private readonly IServiceProvider _serviceProvider;
+
+    public async Task<Result<T>> ValidateAsync<T>(T request)
+    {
+        var validatorType = typeof(AbstractValidator<>).MakeGenericType(request.GetType());
+        var validator = _serviceProvider.GetService(validatorType) as IValidator;
+
+        if (validator == null)
+            return Result<T>.Ok(request); // No validator found, skip validation
+
+        var context = new ValidationContext<T>(request);
+        var result = await validator.ValidateAsync(context);
+
+        if (!result.IsValid)
+        {
+            var errors = result.Errors.Select(e => new Error("validation_error", e.ErrorMessage));
+            return Result<T>.Fail(errors);
+        }
+
+        return Result<T>.Ok(request);
+    }
+}
+
+// Registration in Program.cs
+services.AddScoped<IValidationService, ValidationService>();
+services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 ```
 
 ---
 
-## 6. Domain Events — Handlers
+## 3. Logging Centralizado
 
-Agora que a infraestrutura existe (Fase 1), vamos implementar handlers para os eventos declarados:
+### Logging Interface
 
 ```csharp
-// TransactionCreatedEventHandler
-public class TransactionCreatedEventHandler : INotificationHandler<TransactionCreatedEvent>
+public interface ILoggerService
 {
-    private readonly IAccountRepository _accountRepository;
-    private readonly IUnitOfWork _unitOfWork;
+    void LogInformation(string message, params object[] args);
+    void LogWarning(string message, params object[] args);
+    void LogError(Exception ex, string message, params object[] args);
+    void LogDebug(string message, params object[] args);
+}
 
-    public async Task Handle(TransactionCreatedEvent notification, CancellationToken ct)
+public class LoggerService : ILoggerService
+{
+    private readonly ILogger<LoggerService> _logger;
+
+    public LoggerService(ILogger<LoggerService> logger)
     {
-        var account = await _accountRepository.GetByIdAsync(notification.Transaction.AccountId, ct);
-        if (account == null) return;
+        _logger = logger;
+    }
 
-        account.CurrentBalance += notification.Transaction.Type switch
+    public void LogInformation(string message, params object[] args)
+        => _logger.LogInformation(message, args);
+
+    public void LogWarning(string message, params object[] args)
+        => _logger.LogWarning(message, args);
+
+    public void LogError(Exception ex, string message, params object[] args)
+        => _logger.LogError(ex, message, args);
+
+    public void LogDebug(string message, params object[] args)
+        => _logger.LogDebug(message, args);
+}
+```
+
+### Integracao nos Services
+
+```csharp
+public class AccountService : IAccountService
+{
+    private readonly IAccountRepository _repository;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ICacheService _cache;
+    private readonly ILoggerService _logger;
+
+    public async Task<Result<Guid>> CreateAsync(CreateAccountRequest request, Guid userId, CancellationToken ct)
+    {
+        _logger.LogInformation("Creating account for user {UserId}", userId);
+
+        if (string.IsNullOrWhiteSpace(request.Name))
         {
-            TransactionType.Income => notification.Transaction.Amount,
-            TransactionType.Expense => -notification.Transaction.Amount,
-            TransactionType.Transfer => 0, // handled separately
-            _ => 0
+            _logger.LogWarning("Account creation failed: empty name");
+            return Result<Guid>.Fail(new Error("validation_error", "Account name is required"));
+        }
+
+        var account = new Account { ... };
+
+        await _repository.AddAsync(account, ct);
+        await _unitOfWork.CommitAsync(ct);
+
+        _logger.LogInformation("Account {AccountId} created successfully", account.Id);
+        return Result<Guid>.Ok(account.Id);
+    }
+}
+```
+
+---
+
+## 4. Tratamento de Erros Avancado
+
+### Custom Exceptions
+
+```csharp
+public class LedgerFlowException : Exception
+{
+    public string Code { get; }
+    public LedgerFlowException(string code, string message) : base(message)
+    {
+        Code = code;
+    }
+}
+
+public class NotFoundException : LedgerFlowException
+{
+    public NotFoundException(string entity, Guid id)
+        : base("not_found", $"{entity} with id {id} not found") { }
+}
+
+public class ValidationException : LedgerFlowException
+{
+    public ValidationException(string message)
+        : base("validation_error", message) { }
+}
+
+public class UnauthorizedException : LedgerFlowException
+{
+    public UnauthorizedException(string message = "Unauthorized")
+        : base("unauthorized", message) { }
+}
+```
+
+### Exception Handler Middleware
+
+```csharp
+public class GlobalExceptionHandler : IExceptionHandler
+{
+    private readonly ILogger<GlobalExceptionHandler> _logger;
+
+    public GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger)
+    {
+        _logger = logger;
+    }
+
+    public async ValueTask<bool> TryHandleAsync(HttpContext context, Exception exception, CancellationToken ct)
+    {
+        var (statusCode, title, detail) = exception switch
+        {
+            NotFoundException => (404, "Not Found", exception.Message),
+            ValidationException => (400, "Validation Error", exception.Message),
+            UnauthorizedException => (401, "Unauthorized", exception.Message),
+            _ => (500, "Internal Server Error", "An unexpected error occurred")
         };
 
-        await _unitOfWork.CommitAsync(ct);
+        _logger.LogError(exception, "Exception: {Title}", title);
+
+        context.Response.StatusCode = statusCode;
+        context.Response.ContentType = "application/problem+json";
+
+        await context.Response.WriteAsJsonAsync(new
+        {
+            type = $"https://httpstatuses.com/{statusCode}",
+            title,
+            detail
+        });
+
+        return true;
     }
 }
-
-// AccountBalanceChangedEventHandler — para auditoria futura
-public class AccountBalanceChangedEventHandler : INotificationHandler<AccountBalanceChangedEvent>
-{
-    // Fase 4: publish to audit log
-}
-```
-
-### Register Events
-
-```csharp
-// Program.cs
-services.AddMediatR(cfg =>
-{
-    cfg.RegisterServicesFromAssembly(typeof(CreateAccountCommand).Assembly);
-    cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
-    cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
-    cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(PerformanceBehavior<,>));
-    cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
-});
 ```
 
 ---
 
-## 7. Testes — Estratégia Expandida
+## 5. Testes Unitarios
 
-### Unit Tests
+### Estrutura
 
 ```
 tests/LedgerFlow.Unit.Tests/
-├── Auth/
-│   ├── RegisterCommandTests.cs
-│   ├── LoginCommandTests.cs
-│   └── RefreshTokenCommandTests.cs
-├── Accounts/
-│   ├── CreateAccountCommandTests.cs
-│   ├── UpdateAccountCommandTests.cs
-│   ├── DeleteAccountCommandTests.cs
-│   └── AccountValidatorsTests.cs
-├── Transactions/
-│   ├── CreateTransactionCommandTests.cs
-│   ├── TransferTransactionTests.cs
-│   └── TransactionValidatorsTests.cs
-├── Domain/
-│   ├── AccountTests.cs (domain logic)
-│   ├── TransactionTests.cs
-│   └── EntityTests.cs
-├── Shared/
-│   ├── ResultTests.cs
-│   └── PagedResultTests.cs
-└── Behaviors/
-    ├── ValidationBehaviorTests.cs
-    └── LoggingBehaviorTests.cs
+├── Services/
+│   ├── AuthServiceTests.cs
+│   ├── AccountServiceTests.cs
+│   ├── TransactionServiceTests.cs
+│   └── DashboardServiceTests.cs
+├── Validators/
+│   ├── RegisterRequestValidatorTests.cs
+│   ├── CreateAccountRequestValidatorTests.cs
+│   └── CreateTransactionRequestValidatorTests.cs
+└── Shared/
+    ├── ResultTests.cs
+    └── ErrorTests.cs
 ```
 
-#### Coverage Targets
+### Exemplos
 
-- **Commands**: happy path, validation failures, domain rule violations, not found
-- **Validators**: each validation rule, edge cases
-- **Domain**: entity methods, invariants
-- **Behaviors**: pipeline execution order
+```csharp
+public class AccountServiceTests
+{
+    private readonly Mock<IAccountRepository> _repositoryMock;
+    private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<ICacheService> _cacheMock;
+    private readonly Mock<ILoggerService> _loggerMock;
+    private readonly AccountService _service;
 
-### Integration Tests
+    public AccountServiceTests()
+    {
+        _repositoryMock = new Mock<IAccountRepository>();
+        _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _cacheMock = new Mock<ICacheService>();
+        _loggerMock = new Mock<ILoggerService>();
+        _service = new AccountService(_repositoryMock.Object, _unitOfWorkMock.Object, _cacheMock.Object, _loggerMock.Object);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithValidRequest_ReturnsAccountId()
+    {
+        // Arrange
+        var request = new CreateAccountRequest("Test Account", 1000m);
+        var userId = Guid.NewGuid();
+
+        _repositoryMock.Setup(r => r.AddAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _unitOfWorkMock.Setup(u => u.CommitAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        // Act
+        var result = await _service.CreateAsync(request, userId, CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithEmptyName_ReturnsFailure()
+    {
+        // Arrange
+        var request = new CreateAccountRequest("", 1000m);
+        var userId = Guid.NewGuid();
+
+        // Act
+        var result = await _service.CreateAsync(request, userId, CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.Code == "validation_error");
+    }
+}
+
+public class RegisterRequestValidatorTests
+{
+    private readonly RegisterRequestValidator _validator = new();
+
+    [Theory]
+    [InlineData("", "Name is required")]
+    [InlineData("ab", "Name cannot exceed 100 characters")]
+    public void Validate_Name_ReturnsErrors(string name, string expectedError)
+    {
+        var request = new RegisterRequest(name, "test@test.com", "Password1");
+
+        var result = _validator.Validate(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage == expectedError);
+    }
+
+    [Fact]
+    public void Validate_ValidRequest_Passes()
+    {
+        var request = new RegisterRequest("Test User", "test@test.com", "Password1");
+
+        var result = _validator.Validate(request);
+
+        result.IsValid.Should().BeTrue();
+    }
+}
+```
+
+### Dependencies
+
+```xml
+<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+<PackageReference Include="xunit" Version="2.6.2" />
+<PackageReference Include="xunit.runner.visualstudio" Version="2.5.4" />
+<PackageReference Include="Moq" Version="4.20.70" />
+<PackageReference Include="FluentAssertions" Version="6.12.0" />
+```
+
+---
+
+## 6. Testes de Integracao
+
+### Estrutura
 
 ```
 tests/LedgerFlow.Integration.Tests/
-├── Infrastructure/
-│   ├── TestWebApplicationFactory.cs
-│   └── DatabaseFixture.cs
-├── Auth/
-│   ├── RegisterEndpointTests.cs
-│   ├── LoginEndpointTests.cs
-│   └── RefreshTokenEndpointTests.cs
-├── Accounts/
-│   ├── CreateAccountEndpointTests.cs
-│   ├── GetAccountsEndpointTests.cs
-│   ├── UpdateAccountEndpointTests.cs
-│   └── DeleteAccountEndpointTests.cs
-├── Transactions/
-│   ├── CreateTransactionEndpointTests.cs
-│   ├── TransferEndpointTests.cs
-│   └── GetTransactionsEndpointTests.cs
-├── Dashboard/
-│   └── DashboardSummaryEndpointTests.cs
-└── Middleware/
-    └── ExceptionHandlingTests.cs
+├── Api/
+│   ├── AuthControllerTests.cs
+│   ├── AccountsControllerTests.cs
+│   ├── TransactionsControllerTests.cs
+│   └── DashboardControllerTests.cs
+└── Fixtures/
+    └── IntegrationTestFixture.cs
 ```
 
-#### TestContainers Setup
+### Fixture
 
 ```csharp
-public class TestWebApplicationFactory : WebApplicationFactory<Program>
+public class IntegrationTestFixture : WebApplicationFactory<Program>
 {
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder().Build();
     private readonly RedisContainer _redis = new RedisBuilder().Build();
+
+    public string ConnectionString => _postgres.GetConnectionString();
+    public string RedisConnectionString => _redis.GetConnectionString();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.ConfigureTestServices(services =>
         {
-            services.RemoveAll(sp => sp.GetServiceKind() == typeof(DbContextOptions<AppDbContext>));
+            services.RemoveAll(sp => sp.GetServiceType() == typeof(DbContextOptions<AppDbContext>));
             services.AddDbContext<AppDbContext>(options =>
-                options.UseNpgsql(_postgres.GetConnectionString()));
+                options.UseNpgsql(ConnectionString));
 
-            services.RemoveAll(sp => sp.GetServiceKind() == typeof(IConnectionMultiplexer));
+            services.RemoveAll(sp => sp.GetServiceType() == typeof(IConnectionMultiplexer));
             services.AddSingleton<IConnectionMultiplexer>(
-                ConnectionMultiplexer.Connect(_redis.GetConnectionString()));
+                ConnectionMultiplexer.Connect(RedisConnectionString));
         });
     }
 }
-```
 
----
-
-## 8. Test Helpers
-
-```csharp
-// TestHelpers/ResultAssertions.cs
-public static class ResultAssertions
+public class AccountsControllerTests : IClassFixture<IntegrationTestFixture>
 {
-    public static void ShouldBeSuccess<T>(Result<T> result)
+    private readonly IntegrationTestFixture _fixture;
+    private readonly HttpClient _client;
+
+    public AccountsControllerTests(IntegrationTestFixture fixture)
     {
-        result.IsSuccess.Should().BeTrue();
-        result.Errors.Should().BeEmpty();
+        _fixture = fixture;
+        _client = fixture.CreateClient();
     }
 
-    public static void ShouldBeFailure<T>(Result<T> result)
+    [Fact]
+    public async Task CreateAccount_WithValidData_ReturnsCreated()
     {
-        result.IsSuccess.Should().BeFalse();
-        result.Errors.Should().NotBeEmpty();
-    }
+        // Arrange
+        var request = new { Name = "Test Account", InitialBalance = 1000m };
+        var token = await GetAuthToken();
 
-    public static void ShouldHaveError<T>(Result<T> result, string code)
-    {
-        result.Errors.Should().Contain(e => e.Code == code);
-    }
-}
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/accounts", request, new CancellationToken());
 
-// TestHelpers/FakeDataGenerator.cs
-public static class FakeData
-{
-    public static User CreateUser() => new User { ... };
-    public static Account CreateAccount(Guid userId) => new Account { ... };
-    public static Transaction CreateTransaction(Guid accountId) => new Transaction { ... };
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
 }
 ```
 
 ---
 
-## 9. Implementação — Ordem
+## 7. Implementacao — Ordem
 
-1. Criar pasta DTOs com todos os request/response objects
-2. Separar Commands (write) de Queries (read) em pastas distintas
-3. Criar pipeline behaviors (Logging, Performance, Transaction)
-4. Implementar handlers de Domain Events
-5. Expandir FluentValidation com regras de domínio
-6. Adicionar testes unitários para cada handler
-7. Adicionar testes de integração para endpoints
-8. Configurar TestContainers
+1. Adicionar FluentValidation NuGet packages
+2. Criar validadores em `Application/Validators/`
+3. Implementar `IValidationService`
+4. Implementar `ILoggerService` + `ExceptionHandler`
+5. Criar custom exceptions
+6. Atualizar Services para usar validation + logging
+7. Criar unit tests para Services
+8. Criar unit tests para Validators
+9. Criar integration tests
+10. Configurar TestContainers
 
 ---
 
-## 10. Out of Scope
+## 8. Out of Scope
 
-- CSV import (Fase 3)
 - Hangfire jobs (Fase 3)
+- CSV import (Fase 3)
 - RowVersion enforcement (Fase 4)
 - Audit log (Fase 4)
 
 ---
 
-## 11. Dependências Novas
+## 9. Critérios de Conclusão
 
-```xml
-<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
-<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
-<PackageReference Include="Moq" Version="4.20.70" />
-<PackageReference Include="FluentAssertions" Version="6.12.0" />
-<PackageReference Include="Testcontainers" Version="3.7.0" />
-<PackageReference Include="Testcontainers.PostgreSql" Version="3.7.0" />
-<PackageReference Include="Testcontainers.Redis" Version="3.7.0" />
-```
-
----
-
-## 12. Critérios de Conclusão
-
-- [ ] Read/Write models completamente separados
-- [ ] 4 pipeline behaviors funcionando
-- [ ] Domain events com handlers
-- [ ]Validators com regras de domínio
+- [ ] FluentValidation em todos os requests
+- [ ] Logging centralizado nos Services
+- [ ] Global exception handler funcionando
 - [ ] 80%+ coverage em unit tests
-- [ ] Integration tests passando com TestContainers
+- [ ] Integration tests passando
 - [ ] Build verde em CI

@@ -3,6 +3,7 @@
 **Date:** 2026-05-14
 **Phase:** 4/4
 **Prerequisite:** Fase 1 + Fase 2 + Fase 3 completas
+**Arquitetura:** MVC + Services + Repositories (com RowVersion)
 
 ---
 
@@ -14,7 +15,7 @@ Implementação de optimistic concurrency via RowVersion, sistema de auditoria c
 
 ## 2. RowVersion — Configuração EF Core
 
-### Entidades
+### Entities
 
 ```csharp
 public class Account
@@ -25,66 +26,134 @@ public class Account
     public decimal InitialBalance { get; set; }
     public decimal CurrentBalance { get; set; }
     public bool IsDeleted { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
 
     [Timestamp]
-    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
+    public byte[]? RowVersion { get; set; }
+}
+
+public class Transaction
+{
+    public Guid Id { get; set; }
+    public Guid AccountId { get; set; }
+    public Guid? CategoryId { get; set; }
+    public decimal Amount { get; set; }
+    public TransactionType Type { get; set; }
+    public Guid? TransferToAccountId { get; set; }
+    public string? Description { get; set; }
+    public DateTime Date { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    [Timestamp]
+    public byte[]? RowVersion { get; set; }
+}
+
+public class Category
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public CategoryType Type { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    [Timestamp]
+    public byte[]? RowVersion { get; set; }
 }
 ```
 
-### DbContext Configuration
+### Configurations
 
 ```csharp
-protected override void ConfigureConventions(ModelConfigurationBuilder builder)
-{
-    builder.Conventions.Add(_ => new RowVersionConvention());
-}
-
 public class AccountConfiguration : IEntityTypeConfiguration<Account>
 {
     public void Configure(EntityTypeBuilder<Account> builder)
     {
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.RowVersion).IsRowVersion();
-        builder.Property(x => x.Name).HasMaxLength(100);
+        builder.Property(x => x.Name).HasMaxLength(100).IsRequired();
         builder.Property(x => x.CurrentBalance).HasPrecision(18, 2);
+        builder.Property(x => x.InitialBalance).HasPrecision(18, 2);
+        builder.Property(x => x.RowVersion).IsRowVersion();
+        builder.HasQueryFilter(x => !x.IsDeleted);
+    }
+}
+
+public class TransactionConfiguration : IEntityTypeConfiguration<Transaction>
+{
+    public void Configure(EntityTypeBuilder<Transaction> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Amount).HasPrecision(18, 2);
+        builder.Property(x => x.Description).HasMaxLength(500);
+        builder.Property(x => x.RowVersion).IsRowVersion();
+        builder.HasOne(x => x.Account).WithMany().HasForeignKey(x => x.AccountId);
     }
 }
 ```
 
 ---
 
-## 3. Concurrency Handling — API Layer
+## 3. Concurrency Handling — Services
 
-### Update com Concurrency Token
+### UpdateAccountRequest (com RowVersion)
 
 ```csharp
-public class UpdateAccountCommand : IRequest<Result<AccountDto>>
-{
-    public Guid Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
-}
+public record UpdateAccountRequest(Guid Id, string Name, byte[]? RowVersion);
+```
 
-public class UpdateAccountCommandHandler : IRequestHandler<UpdateAccountCommand, Result<AccountDto>>
+### AccountService com Concurrency Check
+
+```csharp
+public class AccountService : IAccountService
 {
-    public async Task<Result<AccountDto>> Handle(UpdateAccountCommand request, CancellationToken ct)
+    private readonly IAccountRepository _repository;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ICacheService _cache;
+    private readonly ILoggerService _logger;
+
+    public async Task<Result> UpdateAsync(UpdateAccountRequest request, Guid userId, CancellationToken ct)
     {
-        var account = await _accountRepository.GetByIdAsync(request.Id, ct);
-        if (account == null)
-            return Result<AccountDto>.Fail(new Error("not_found", "Account not found"));
+        _logger.LogInformation("Updating account {AccountId}", request.Id);
 
-        if (account.RowVersion == null || !account.RowVersion.SequenceEqual(request.RowVersion))
-            return Result<AccountDto>.Fail(new Error("concurrency_conflict", "The entity was modified by another user"));
+        var account = await _repository.GetByIdAsync(request.Id, ct);
+        if (account == null || account.UserId != userId)
+            return Result.Fail(new Error("not_found", "Account not found"));
+
+        // Concurrency check
+        if (request.RowVersion != null && account.RowVersion != null)
+        {
+            if (!account.RowVersion.SequenceEqual(request.RowVersion))
+            {
+                _logger.LogWarning("Concurrency conflict for account {AccountId}", request.Id);
+                return Result.Fail(new Error("concurrency_conflict", "The entity was modified by another user. Please refresh and try again."));
+            }
+        }
 
         account.Name = request.Name;
-        await _unitOfWork.CommitAsync(ct);
+        account.UpdatedAt = DateTime.UtcNow;
 
-        return Result<AccountDto>.Ok(AccountDto.FromEntity(account));
+        try
+        {
+            await _repository.UpdateAsync(account, ct);
+            await _unitOfWork.CommitAsync(ct);
+
+            await _cache.RemoveAsync($"ledgerflow:dashboard:{userId}:summary", ct);
+
+            _logger.LogInformation("Account {AccountId} updated successfully", request.Id);
+            return Result.Ok();
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            _logger.LogError(ex, "Concurrency exception updating account {AccountId}", request.Id);
+            return Result.Fail(new Error("concurrency_conflict", "The entity was modified by another user. Please refresh and try again."));
+        }
     }
 }
 ```
 
-### Response com RowVersion
+---
+
+## 4. DTOs com RowVersion
 
 ```csharp
 public record AccountDto
@@ -92,43 +161,34 @@ public record AccountDto
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public decimal Balance { get; set; }
-    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
+    public byte[]? RowVersion { get; set; }
+    public DateTime CreatedAt { get; set; }
 
     public static AccountDto FromEntity(Account account) => new()
     {
         Id = account.Id,
         Name = account.Name,
         Balance = account.CurrentBalance,
-        RowVersion = account.RowVersion
+        RowVersion = account.RowVersion,
+        CreatedAt = account.CreatedAt
     };
 }
+
+public record TransactionDto
+{
+    public Guid Id { get; set; }
+    public Guid AccountId { get; set; }
+    public decimal Amount { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public DateTime Date { get; set; }
+    public byte[]? RowVersion { get; set; }
+}
 ```
-
-### HTTP Response
-
-- **409 Conflict**: quando RowVersion não corresponde
-- **Body**: `{ "type": "https://httpstatuses.com/409", "title": "Conflict", "detail": "Entity was modified by another user" }`
 
 ---
 
-## 4. Domain Events — Auditoria
-
-### Events
-
-```csharp
-public record EntityModifiedEvent
-{
-    public string EntityType { get; set; } = string.Empty;
-    public Guid EntityId { get; set; }
-    public string Operation { get; set; } = string.Empty; // Created, Updated, Deleted
-    public Guid UserId { get; set; }
-    public DateTime Timestamp { get; set; }
-    public Dictionary<string, object?> OldValues { get; set; } = new();
-    public Dictionary<string, object?> NewValues { get; set; } = new();
-}
-```
-
-### Audit Log Entity
+## 5. Auditoria — Entity
 
 ```csharp
 public class AuditLog
@@ -136,7 +196,7 @@ public class AuditLog
     public Guid Id { get; set; }
     public string EntityType { get; set; } = string.Empty;
     public Guid EntityId { get; set; }
-    public string Operation { get; set; } = string.Empty;
+    public string Operation { get; set; } = string.Empty; // Created, Updated, Deleted
     public Guid UserId { get; set; }
     public DateTime Timestamp { get; set; }
     public string? OldValues { get; set; } // JSON
@@ -146,104 +206,42 @@ public class AuditLog
 }
 ```
 
-### Handler
+### Repository Interface
 
 ```csharp
-public class EntityModifiedEventHandler : INotificationHandler<EntityModifiedEvent>
+public interface IAuditLogRepository
 {
-    private readonly IAuditLogRepository _auditLogRepository;
-
-    public async Task Handle(EntityModifiedEvent notification, CancellationToken ct)
-    {
-        var log = new AuditLog
-        {
-            EntityType = notification.EntityType,
-            EntityId = notification.EntityId,
-            Operation = notification.Operation,
-            UserId = notification.UserId,
-            Timestamp = notification.Timestamp,
-            OldValues = JsonSerializer.Serialize(notification.OldValues),
-            NewValues = JsonSerializer.Serialize(notification.NewValues)
-        };
-
-        await _auditLogRepository.AddAsync(log, ct);
-    }
+    Task AddAsync(AuditLog log, CancellationToken ct);
+    Task<List<AuditLog>> GetByEntityIdAsync(Guid entityId, CancellationToken ct);
+    Task<List<AuditLog>> GetByUserIdAsync(Guid userId, int page, int pageSize, CancellationToken ct);
+    Task<List<AuditLog>> GetByDateRangeAsync(DateTime from, DateTime to, int page, int pageSize, CancellationToken ct);
 }
 ```
 
 ---
 
-## 5. Publish Events — Application Layer
-
-### Command Handler com Publish
+## 6. Auditoria — Service
 
 ```csharp
-public class UpdateAccountCommandHandler : IRequestHandler<UpdateAccountCommand, Result<AccountDto>>
+public interface IAuditService
 {
-    public async Task<Result<AccountDto>> Handle(UpdateAccountCommand request, CancellationToken ct)
+    Task<Result<List<AuditLogDto>>> GetByEntityIdAsync(Guid entityId, CancellationToken ct);
+    Task<Result<PagedResult<AuditLogDto>>> GetByUserIdAsync(Guid userId, int page, int pageSize, CancellationToken ct);
+}
+
+public class AuditService : IAuditService
+{
+    private readonly IAuditLogRepository _repository;
+
+    public async Task<Result<List<AuditLogDto>>> GetByEntityIdAsync(Guid entityId, CancellationToken ct)
     {
-        var oldAccount = await _accountRepository.GetByIdAsync(request.Id, ct);
-        // ... update logic ...
-
-        await _unitOfWork.CommitAsync(ct);
-
-        // Publish event for audit
-        await _mediator.Publish(new EntityModifiedEvent
-        {
-            EntityType = nameof(Account),
-            EntityId = account.Id,
-            Operation = "Updated",
-            UserId = request.UserId,
-            Timestamp = DateTime.UtcNow,
-            OldValues = oldAccount.ToDictionary(),
-            NewValues = account.ToDictionary()
-        }, ct);
-
-        return Result<AccountDto>.Ok(AccountDto.FromEntity(account));
+        var logs = await _repository.GetByEntityIdAsync(entityId, ct);
+        return Result<List<AuditLogDto>>.Ok(logs.Select(AuditLogDto.FromEntity).ToList());
     }
 }
 ```
 
-### Extension Method para Dictionary
-
-```csharp
-public static class EntityExtensions
-{
-    public static Dictionary<string, object?> ToDictionary(this Account account) => new()
-    {
-        ["Name"] = account.Name,
-        ["InitialBalance"] = account.InitialBalance,
-        ["CurrentBalance"] = account.CurrentBalance,
-        ["IsDeleted"] = account.IsDeleted
-    };
-}
-```
-
----
-
-## 6. Audit Log API
-
-### Endpoint
-
-```
-GET /api/audit-logs
-GET /api/audit-logs/{entityType}/{entityId}
-```
-
-### Query
-
-```csharp
-public record GetAuditLogsQuery(
-    Guid? EntityId,
-    string? EntityType,
-    DateTime? FromDate,
-    DateTime? ToDate,
-    int Page = 1,
-    int PageSize = 20
-) : IRequest<Result<PagedResult<AuditLogDto>>>;
-```
-
-### Response
+### AuditLogDto
 
 ```csharp
 public record AuditLogDto
@@ -253,125 +251,249 @@ public record AuditLogDto
     public Guid EntityId { get; set; }
     public string Operation { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }
-    public Dictionary<string, object?> Changes { get; set; } = new();
+    public Dictionary<string, object?>? Changes { get; set; }
+
+    public static AuditLogDto FromEntity(AuditLog log) => new()
+    {
+        Id = log.Id,
+        EntityType = log.EntityType,
+        EntityId = log.EntityId,
+        Operation = log.Operation,
+        Timestamp = log.Timestamp,
+        Changes = ParseJsonToDictionary(log.NewValues)
+    };
+
+    private static Dictionary<string, object?>? ParseJsonToDictionary(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return null;
+        return JsonSerializer.Deserialize<Dictionary<string, object?>>(json);
+    }
 }
 ```
 
 ---
 
-## 7. Race Condition Protection
+## 7. Integrando Auditoria nos Services
 
-### Pessimistic Lock (opcional)
-
-Para cenários críticos (ex: transferência), usar lock no banco:
+### Base Service com Auditoria
 
 ```csharp
-public async Task<Account> GetByIdWithLockAsync(Guid id, CancellationToken ct)
+public abstract class BaseService
 {
-    return await _context.Accounts
-        .FromSqlRaw("SELECT * FROM accounts WHERE id = {0} FOR UPDATE", id)
-        .FirstOrDefaultAsync(ct);
+    protected readonly IAuditLogRepository _auditLogRepository;
+    protected readonly ILoggerService _logger;
+
+    protected async Task AuditAsync(string entityType, Guid entityId, string operation, object? oldValues, object? newValues, Guid userId, CancellationToken ct)
+    {
+        var log = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            EntityType = entityType,
+            EntityId = entityId,
+            Operation = operation,
+            UserId = userId,
+            Timestamp = DateTime.UtcNow,
+            OldValues = oldValues != null ? JsonSerializer.Serialize(oldValues) : null,
+            NewValues = newValues != null ? JsonSerializer.Serialize(newValues) : null
+        };
+
+        await _auditLogRepository.AddAsync(log, ct);
+    }
+}
+
+public class AccountService : BaseService, IAccountService
+{
+    public async Task<Result> UpdateAsync(UpdateAccountRequest request, Guid userId, CancellationToken ct)
+    {
+        var oldAccount = await _repository.GetByIdAsync(request.Id, ct);
+        // ... update logic
+        await _unitOfWork.CommitAsync(ct);
+
+        await AuditAsync(nameof(Account), request.Id, "Updated", oldAccount, account, userId, ct);
+        return Result.Ok();
+    }
+
+    public async Task<Result> DeleteAsync(Guid id, Guid userId, CancellationToken ct)
+    {
+        var account = await _repository.GetByIdAsync(id, ct);
+        // ... delete logic
+        await _unitOfCommitAsync(ct);
+
+        await AuditAsync(nameof(Account), id, "Deleted", account, null, userId, ct);
+        return Result.Ok();
+    }
 }
 ```
 
-### Optimistic Lock (padrão)
+---
 
-Para a maioria das operações, o RowVersion já provê proteção automática via EF Core.
+## 8. Audit Log API
+
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
+public class AuditLogsController : ControllerBase
+{
+    private readonly IAuditService _auditService;
+
+    [HttpGet("entity/{entityId}")]
+    public async Task<IActionResult> GetByEntity(Guid entityId, CancellationToken ct)
+    {
+        var result = await _auditService.GetByEntityIdAsync(entityId, ct);
+        return result.IsSuccess ? Ok(result.Value) : BadRequest(result.Errors);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        var result = await _auditService.GetByUserIdAsync(userId, page, pageSize, ct);
+        return result.IsSuccess ? Ok(result.Value) : BadRequest(result.Errors);
+    }
+
+    private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+}
+```
 
 ---
 
-## 8. Testing
+## 9. Race Condition Protection
 
-### Concurrency Tests
+### Pessimistic Lock (para transferências)
+
+```csharp
+public interface IAccountRepository
+{
+    Task<Account?> GetByIdWithLockAsync(Guid id, CancellationToken ct);
+}
+
+public class AccountRepository : IAccountRepository
+{
+    private readonly AppDbContext _context;
+
+    public async Task<Account?> GetByIdWithLockAsync(Guid id, CancellationToken ct)
+    {
+        return await _context.Accounts
+            .FromSqlRaw("SELECT * FROM accounts WHERE id = {0} FOR UPDATE", id)
+            .FirstOrDefaultAsync(ct);
+    }
+}
+
+// No TransactionService
+public async Task<Result<Guid>> CreateAsync(CreateTransactionRequest request, Guid userId, CancellationToken ct)
+{
+    if (request.Type == TransactionType.Transfer)
+    {
+        var sourceAccount = await _accountRepository.GetByIdWithLockAsync(request.AccountId, ct);
+        var destAccount = await _accountRepository.GetByIdWithLockAsync(request.TransferToAccountId!.Value, ct);
+
+        // Transfer logic with lock
+    }
+}
+```
+
+---
+
+## 10. Testes de Concorrência
 
 ```csharp
 public class AccountConcurrencyTests
 {
     [Fact]
-    public async Task Update_WithStaleRowVersion_ReturnsConflict()
+    public async Task UpdateAsync_WithStaleRowVersion_ReturnsConflict()
     {
         // Arrange
-        var account = await CreateAccountAsync();
+        var account = await CreateTestAccountAsync();
         var staleVersion = account.RowVersion;
 
-        await _context.Accounts.ExecuteUpdateAsync(s => s
-            .SetProperty(x => x.Name, "Updated by other"));
+        // Simulate another user updating
+        await _context.Accounts.ExecuteUpdateAsync(s =>
+            s.SetProperty(x => x.Name, "Updated by other"));
 
-        var command = new UpdateAccountCommand(account.Id, "New Name", staleVersion);
+        var request = new UpdateAccountRequest(account.Id, "New Name", staleVersion);
 
         // Act
-        var result = await _mediator.Send(command);
+        var result = await _service.UpdateAsync(request, userId, CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.Errors.Should().Contain(e => e.Code == "concurrency_conflict");
     }
+
+    [Fact]
+    public async Task UpdateAsync_WithValidRowVersion_Succeeds()
+    {
+        // Arrange
+        var account = await CreateTestAccountAsync();
+        var currentVersion = account.RowVersion;
+
+        var request = new UpdateAccountRequest(account.Id, "New Name", currentVersion);
+
+        // Act
+        var result = await _service.UpdateAsync(request, userId, CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+    }
 }
 ```
 
-### Audit Log Tests
+### Audit Tests
 
 ```csharp
-public class AuditLogTests
+public class AuditServiceTests
 {
     [Fact]
-    public async Task CreateAccount_PublishesAuditEvent()
+    public async Task UpdateAccount_CreatesAuditLog()
     {
         // Arrange
-        var userId = Guid.NewGuid();
-        var command = new CreateAccountCommand("Test", 1000);
+        var account = await CreateTestAccountAsync();
+        var request = new UpdateAccountRequest(account.Id, "New Name", account.RowVersion);
 
         // Act
-        await _mediator.Send(command);
+        await _accountService.UpdateAsync(request, userId, CancellationToken.None);
 
         // Assert
-        var auditLogs = await _auditLogRepository.GetByEntityIdAsync(command.Result.Value);
-        auditLogs.Should().Contain(l => l.Operation == "Created");
+        var auditLogs = await _auditService.GetByEntityIdAsync(account.Id, CancellationToken.None);
+        auditLogs.Value.Should().Contain(l => l.Operation == "Updated");
     }
 }
 ```
 
 ---
 
-## 9. Implementação — Ordem
+## 11. Implementação — Ordem
 
-1. Adicionar RowVersion às entidades (Account, Transaction, Category)
+1. Adicionar RowVersion às entities (Account, Transaction, Category)
 2. Configurar EF Core com optimistic concurrency
-3. Atualizar Commands com RowVersion parameter
-4. Implementar EntityModifiedEvent + Handler
+3. Atualizar Update requests com RowVersion parameter
+4. Implementar concurrency check nos Services
 5. Criar AuditLog entity + repository
-6. Adicionar AuditLog API endpoints
-7. Atualizar handlers para publish events
-8. Implementar concurrency tests
+6. Implementar IAuditService
+7. Adicionar AuditLogsController
+8. Integrar auditoria nos Services
+9. Implementar pessimistic lock para transferências
+10. Implementar testes de concorrência
 
 ---
 
-## 10. Dependências Novas
-
-```xml
-<!-- Nenhuma dependência nova necessária - tudo com EF Core existente -->
-```
-
----
-
-## 11. Critérios de Conclusão
+## 12. Critérios de Conclusão
 
 - [ ] RowVersion configurado em Account, Transaction, Category
 - [ ] 409 Conflict retornado em updates com RowVersion expirado
 - [ ] Audit logs criados para todas as operações
-- [ ] API de consulta de audit logs
+- [ ] API de consulta de audit logs funcionando
 - [ ] Testes de concorrência passando
 - [ ] Build verde
 
 ---
 
-## 12. Complete Project Summary
+## 13. Projeto Completo — Resumo
 
-| Fase | Escopo | Status |
-|------|--------|--------|
-| **1** | MVP (Auth, Accounts, Transactions, Dashboard) | ✓ Spec |
-| **2** | CQRS, MediatR, Validators, Tests | ✓ Spec |
-| **3** | Jobs (Hangfire), CSV Import, Cache | ✓ Spec |
-| **4** | RowVersion, Concurrency, Audit | ✓ Spec |
-
-Todos os 4 specs estão prontos para implementação sequencial.
+| Fase | Escopo | Arquitetura |
+|------|--------|--------------|
+| **1** | MVP (Auth, Accounts, Transactions, Dashboard) | MVC + Services + Repositories |
+| **2** | FluentValidation, Logging, Testes | Expansão dos Services |
+| **3** | Hangfire Jobs, CSV Import, Cache | Background Jobs + Services |
+| **4** | RowVersion, Concurrency, Audit | Optimistic Concurrency + Audit |

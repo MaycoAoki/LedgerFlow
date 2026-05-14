@@ -3,6 +3,7 @@
 **Date:** 2026-05-14
 **Phase:** 3/4
 **Prerequisite:** Fase 1 + Fase 2 completas
+**Arquitetura:** MVC + Services + Repositories + Hangfire
 
 ---
 
@@ -14,10 +15,10 @@ Introdução de processamento assíncrono com Hangfire para jobs recorrentes, im
 
 ## 2. Hangfire — Configuração
 
-### Servidor
+### Program.cs
 
 ```csharp
-// Program.cs
+// Add Hangfire
 services.AddHangfire(cfg => cfg
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
@@ -29,16 +30,28 @@ services.AddHangfireServer(options =>
     options.WorkerCount = Environment.ProcessorCount;
     options.Queues = new[] { "critical", "default", "background" };
 });
+
+// Dashboard (apenas em desenvolvimento)
+if (env.IsDevelopment())
+{
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = new[] { new HangfireDashboardAuthorizationFilter() }
+    });
+}
 ```
 
-### Dashboard
+### Retry Policy
 
 ```csharp
-// Available em /hangfire
-services.AddHangfireDashboard(options => options
+services.AddScoped<IRecurringJobManager, RecurringJobManager>();
+
+// Global retry
+GlobalJobFilters.Filters.Add(new AutomaticRetryAttribute
 {
-    DashboardTitle = "LedgerFlow Jobs";
-    Authorization = new[] { new HangfireAuthFilter() };
+    Attempts = 3,
+    DelaysInSeconds = new[] { 30, 60, 300 },
+    OnAttemptsExceeded = AttemptsExceededAction.Delete
 });
 ```
 
@@ -46,22 +59,50 @@ services.AddHangfireDashboard(options => options
 
 ## 3. Jobs Recorrentes
 
+### Interfaces
+
+```csharp
+public interface IBackgroundJobService
+{
+    Task ScheduleDailySummaryAsync();
+    Task ScheduleMonthlyCloseAsync();
+    Task ScheduleCacheExpirationAsync();
+}
+```
+
 ### DailySummaryJob
 
 ```csharp
-public class DailySummaryJob
+public interface IDailySummaryJob
+{
+    [Daily]
+    Task Execute();
+}
+
+public class DailySummaryJob : IDailySummaryJob
 {
     private readonly IUserRepository _userRepository;
-    private readonly IRedisCacheService _cache;
+    private readonly ICacheService _cache;
+    private readonly ITransactionRepository _transactionRepository;
 
-    [Daily]
     public async Task Execute()
     {
         var users = await _userRepository.GetAllActiveAsync();
         foreach (var user in users)
         {
-            var summary = await CalculateDailySummary(user.Id);
-            await _cache.SetAsync($"ledgerflow:daily:{user.Id}:{DateTime.Today}", summary, TimeSpan.FromDays(7));
+            var transactions = await _transactionRepository.GetByUserIdAsync(user.Id);
+            var todayTransactions = transactions.Where(t => t.Date.Date == DateTime.Today);
+
+            var summary = new DailySummaryDto
+            {
+                Date = DateTime.Today,
+                TotalIncome = todayTransactions.Where(t => t.Type == TransactionType.Income).Sum(t => t.Amount),
+                TotalExpense = todayTransactions.Where(t => t.Type == TransactionType.Expense).Sum(t => t.Amount),
+                TransactionCount = todayTransactions.Count()
+            };
+
+            var key = $"ledgerflow:daily:{user.Id}:{DateTime.Today:yyyy-MM-dd}";
+            await _cache.SetAsync(key, summary, TimeSpan.FromDays(30));
         }
     }
 }
@@ -70,14 +111,42 @@ public class DailySummaryJob
 ### MonthlyCloseJob
 
 ```csharp
-public class MonthlyCloseJob
+public interface IMonthlyCloseJob
 {
     [Monthly(1, 1)] // First day of month
+    Task Execute();
+}
+
+public class MonthlyCloseJob : IMonthlyCloseJob
+{
+    private readonly IAccountRepository _accountRepository;
+    private readonly ITransactionRepository _transactionRepository;
+    private readonly IMonthlySnapshotRepository _snapshotRepository;
+
     public async Task Execute()
     {
-        // Create monthly snapshots for all accounts
-        // Archive old transactions (move to historical table)
-        // Reset monthly counters
+        var accounts = await _accountRepository.GetAllAsync();
+        var lastMonth = DateTime.Today.AddMonths(-1);
+
+        foreach (var account in accounts)
+        {
+            var transactions = await _transactionRepository.GetByAccountIdAsync(account.Id);
+            var monthTransactions = transactions.Where(t => t.Date.Month == lastMonth.Month && t.Date.Year == lastMonth.Year);
+
+            var snapshot = new MonthlySnapshot
+            {
+                Id = Guid.NewGuid(),
+                AccountId = account.Id,
+                Year = lastMonth.Year,
+                Month = lastMonth.Month,
+                ClosingBalance = account.CurrentBalance,
+                TotalIncome = monthTransactions.Where(t => t.Type == TransactionType.Income).Sum(t => t.Amount),
+                TotalExpense = monthTransactions.Where(t => t.Type == TransactionType.Expense).Sum(t => t.Amount),
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _snapshotRepository.AddAsync(snapshot);
+        }
     }
 }
 ```
@@ -85,19 +154,62 @@ public class MonthlyCloseJob
 ### CacheExpirationJob
 
 ```csharp
-public class CacheExpirationJob
+public interface ICacheExpirationJob
 {
     [Daily]
+    Task Execute();
+}
+
+public class CacheExpirationJob : ICacheExpirationJob
+{
+    private readonly ICacheService _cache;
+
     public async Task Execute()
     {
-        var keys = await _redis.GetKeysAsync("ledgerflow:dashboard:*");
-        var expired = keys.Where(k => DateTime.Parse(k.Split(':').Last()) < DateTime.Today.AddDays(-30));
-        foreach (var key in expired)
+        // Remove old dashboard caches
+        var keys = await _cache.GetKeysAsync("ledgerflow:dashboard:*");
+        var thirtyDaysAgo = DateTime.Today.AddDays(-30);
+
+        foreach (var key in keys)
         {
-            await _redis.RemoveAsync(key);
+            if (key.Contains(thirtyDaysAgo.ToString("yyyy-MM-dd")))
+            {
+                await _cache.RemoveAsync(key);
+            }
         }
     }
 }
+```
+
+### Scheduling
+
+```csharp
+// Extensions/HangfireExtensions.cs
+public static class HangfireExtensions
+{
+    public static void ScheduleRecurringJobs(this IApplicationBuilder app)
+    {
+        var jobManager = app.ApplicationServices.GetRequiredService<IRecurringJobManager>();
+
+        jobManager.AddOrUpdate<IDailySummaryJob>(
+            "daily-summary",
+            job => job.Execute(),
+            Cron.Daily);
+
+        jobManager.AddOrUpdate<IMonthlyCloseJob>(
+            "monthly-close",
+            job => job.Execute(),
+            Cron.Monthly);
+
+        jobManager.AddOrUpdate<ICacheExpirationJob>(
+            "cache-expiration",
+            job => job.Execute(),
+            Cron.Daily);
+    }
+}
+
+// No final de Program.cs
+app.ScheduleRecurringJobs();
 ```
 
 ---
@@ -106,100 +218,137 @@ public class CacheExpirationJob
 
 ### Endpoint
 
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
+public class ImportController : ControllerBase
+{
+    private readonly ITransactionImportService _importService;
+
+    [HttpPost("transactions")]
+    public async Task<IActionResult> ImportTransactions(IFormFile file, Guid accountId, CancellationToken ct)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new Error("validation_error", "File is required"));
+
+        if (!file.FileName.EndsWith(".csv"))
+            return BadRequest(new Error("validation_error", "Only CSV files are allowed"));
+
+        var result = await _importService.ImportAsync(file, accountId, GetUserId(), ct);
+        return result.IsSuccess ? Ok(result.Value) : BadRequest(result.Errors);
+    }
+}
 ```
-POST /api/transactions/import
-Content-Type: multipart/form-data
-Body: file (CSV)
-```
 
-### CSV Format
-
-```csv
-date,amount,type,description,category
-2024-01-15,1500.00,income,Salary,Salary
-2024-01-16,-120.50,expense,Grocery,Food
-2024-01-17,-500.00,transfer,Savings,Investment
-```
-
-### Processo
-
-1. **Upload** → arquivo salvo temporariamente
-2. **Parse** → validação de formato (Hangfire job)
-3. **Validate** → cada linha validada (date format, amount > 0, type enum)
-4. **Import** → transactions criadas em batch
-5. **Report** → summary com sucesso/erros
-
-### Implementation
+### Service
 
 ```csharp
-// Commands/ImportTransactionsCommand.cs
-public record ImportTransactionsCommand(Guid UserId, Guid AccountId, IFormFile File) : IRequest<Result<ImportReport>>;
+public interface ITransactionImportService
+{
+    Task<Result<ImportReport>> ImportAsync(IFormFile file, Guid accountId, Guid userId, CancellationToken ct);
+}
 
 public record ImportReport(int TotalRows, int Imported, int Failed, List<ImportError> Errors);
 public record ImportError(int Row, string Message);
 
-// Handler
-public class ImportTransactionsCommandHandler : IRequestHandler<ImportTransactionsCommand, Result<ImportReport>>
+public class TransactionImportService : ITransactionImportService
 {
-    public async Task<Result<ImportReport>> Handle(ImportTransactionsCommand request, CancellationToken ct)
+    private readonly ITransactionService _transactionService;
+    private readonly ITransactionValidator _validator;
+
+    public async Task<Result<ImportReport>> ImportAsync(IFormFile file, Guid accountId, Guid userId, CancellationToken ct)
     {
-        // 1. Validate file
-        if (!IsValidCsv(request.File)) return Result<ImportReport>.Fail(...);
+        using var reader = new StreamReader(file.OpenReadStream());
+        var lines = (await reader.ReadToEndAsync()).Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
-        // 2. Parse CSV
-        var rows = await ParseCsvAsync(request.File, ct);
+        if (lines.Length == 0)
+            return Result<ImportReport>.Fail(new Error("validation_error", "CSV file is empty"));
 
-        // 3. Enqueue background job for large files
-        if (rows.Count > 100)
-        {
-            await _backgroundJobClient.EnqueueAsync<ICsvImportJob>(job =>
-                job.ImportAsync(request.UserId, request.AccountId, rows));
-            return Result<ImportReport>.Ok(new ImportReport(rows.Count, 0, 0, new List<ImportError> { new(0, "Processing in background") }));
-        }
-
-        // 4. Process inline for small files
-        return await ProcessRows(request.UserId, request.AccountId, rows, ct);
-    }
-}
-
-// Background Job
-public class CsvImportJob : ICsvImportJob
-{
-    public async Task ImportAsync(Guid userId, Guid accountId, List<CsvRow> rows)
-    {
+        // Header line
+        var rows = lines.Skip(1).ToList();
         var errors = new List<ImportError>();
         var imported = 0;
 
-        foreach (var row in rows)
+        // For large files, enqueue background job
+        if (rows.Count > 100)
+        {
+            await _transactionService.EnqueueImportAsync(file, accountId, userId);
+            return Result<ImportReport>.Ok(new ImportReport(rows.Count, 0, 0,
+                new List<ImportError> { new(0, "Processing in background - you'll receive a notification when complete") }));
+        }
+
+        // Process inline for small files
+        for (int i = 0; i < rows.Count; i++)
         {
             try
             {
-                var command = new CreateTransactionCommand(accountId, row.Amount, row.Type, row.Description, row.Date, row.CategoryId);
-                await _mediator.Send(command);
-                imported++;
+                var csvRow = ParseCsvRow(rows[i]);
+                var validationResult = _validator.Validate(csvRow);
+
+                if (!validationResult.IsValid)
+                {
+                    errors.Add(new ImportError(i + 1, string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage))));
+                    continue;
+                }
+
+                var request = new CreateTransactionRequest(
+                    accountId,
+                    csvRow.Amount,
+                    csvRow.Type,
+                    csvRow.Description,
+                    csvRow.Date,
+                    csvRow.CategoryId,
+                    null
+                );
+
+                var result = await _transactionService.CreateAsync(request, userId, ct);
+                if (result.IsSuccess)
+                    imported++;
+                else
+                    errors.Add(new ImportError(i + 1, string.Join(", ", result.Errors.Select(e => e.Message))));
             }
             catch (Exception ex)
             {
-                errors.Add(new ImportError(row.LineNumber, ex.Message));
+                errors.Add(new ImportError(i + 1, ex.Message));
             }
         }
 
-        await _notificationService.SendAsync(userId, $"Import completed: {imported} imported, {errors.Count} failed");
+        return Result<ImportReport>.Ok(new ImportReport(rows.Count, imported, errors.Count, errors));
+    }
+
+    private CsvRow ParseCsvRow(string line)
+    {
+        var parts = line.Split(',');
+        return new CsvRow
+        {
+            Date = DateTime.Parse(parts[0]),
+            Amount = decimal.Parse(parts[1]),
+            Type = Enum.Parse<TransactionType>(parts[2]),
+            Description = parts[3],
+            CategoryName = parts.Length > 4 ? parts[4] : null
+        };
     }
 }
 ```
 
-### Validação de Linhas
+### Background Job for Large Files
 
 ```csharp
-public class CsvRowValidator : AbstractValidator<CsvRow>
+public interface ICsvImportBackgroundJob
 {
-    public CsvRowValidator()
+    Task ImportAsync(string filePath, Guid accountId, Guid userId);
+}
+
+public class CsvImportBackgroundJob : ICsvImportBackgroundJob
+{
+    private readonly ITransactionService _transactionService;
+
+    [Queue("background")]
+    public async Task ImportAsync(string filePath, Guid accountId, Guid userId)
     {
-        RuleFor(x => x.Date).NotEmpty().Must(BeValidDate);
-        RuleFor(x => x.Amount).GreaterThan(0);
-        RuleFor(x => x.Type).IsInEnum();
-        RuleFor(x => x.Description).MaximumLength(500);
+        // Read and process file...
+        // Send notification when complete
     }
 }
 ```
@@ -208,101 +357,103 @@ public class CsvRowValidator : AbstractValidator<CsvRow>
 
 ## 5. Cache Expansion
 
-### Dashboard (existente)
-
-- Key: `ledgerflow:dashboard:{userId}:summary`
-- TTL: 5 minutos
-
-### Categories
+### Categories Cache
 
 ```csharp
-// GET /api/categories (add caching)
-public class GetCategoriesQueryHandler : IRequestHandler<GetCategoriesQuery, Result<List<CategoryDto>>>
+public interface ICategoryService
 {
-    public async Task<Result<List<CategoryDto>>> Handle(GetCategoriesQuery request, CancellationToken ct)
-    {
-        var cacheKey = $"ledgerflow:categories:{request.UserId}";
-        var cached = await _cache.GetAsync<List<CategoryDto>>(cacheKey, ct);
-        if (cached != null) return Result<List<CategoryDto>>.Ok(cached);
+    Task<Result<List<CategoryDto>>> GetAllAsync(Guid userId, CancellationToken ct);
+}
 
-        var categories = await _categoryRepository.GetByUserIdAsync(request.UserId, ct);
-        await _cache.SetAsync(cacheKey, categories, TimeSpan.FromHours(1), ct);
-        return Result<List<CategoryDto>>.Ok(categories);
+public class CategoryService : ICategoryService
+{
+    private readonly ICategoryRepository _repository;
+    private readonly ICacheService _cache;
+
+    public async Task<Result<List<CategoryDto>>> GetAllAsync(Guid userId, CancellationToken ct)
+    {
+        var cacheKey = $"ledgerflow:categories:{userId}";
+
+        var cached = await _cache.GetAsync<List<CategoryDto>>(cacheKey, ct);
+        if (cached != null)
+            return Result<List<CategoryDto>>.Ok(cached);
+
+        var categories = await _repository.GetByUserIdAsync(userId, ct);
+        var dtos = categories.Select(c => new CategoryDto(c.Id, c.Name, c.Type)).ToList();
+
+        await _cache.SetAsync(cacheKey, dtos, TimeSpan.FromHours(1), ct);
+        return Result<List<CategoryDto>>.Ok(dtos);
+    }
+
+    public async Task<Result<Guid>> CreateAsync(CreateCategoryRequest request, Guid userId, CancellationToken ct)
+    {
+        // ... create logic
+        await _cache.RemoveAsync($"ledgerflow:categories:{userId}", ct);
     }
 }
 ```
 
-### Reports
+### Reports Cache
 
 ```csharp
-// GET /api/reports/monthly
-public class GetMonthlyReportQueryHandler : IRequestHandler<GetMonthlyReportQuery, Result<MonthlyReportDto>>
+public interface IReportService
 {
-    public async Task<Result<MonthlyReportDto>> Handle(GetMonthlyReportQuery request, ct)
-    {
-        var cacheKey = $"ledgerflow:report:monthly:{request.UserId}:{request.Year}:{request.Month}";
-        var cached = await _cache.GetAsync<MonthlyReportDto>(cacheKey, ct);
-        if (cached != null) return Result<MonthlyReportDto>.Ok(cached);
+    Task<Result<MonthlyReportDto>> GetMonthlyReportAsync(Guid userId, int year, int month, CancellationToken ct);
+}
 
-        var report = await _reportService.GenerateMonthlyReportAsync(request, ct);
+public class ReportService : IReportService
+{
+    private readonly ITransactionRepository _transactionRepository;
+    private readonly ICacheService _cache;
+
+    public async Task<Result<MonthlyReportDto>> GetMonthlyReportAsync(Guid userId, int year, int month, CancellationToken ct)
+    {
+        var cacheKey = $"ledgerflow:report:monthly:{userId}:{year}:{month}";
+
+        var cached = await _cache.GetAsync<MonthlyReportDto>(cacheKey, ct);
+        if (cached != null)
+            return Result<MonthlyReportDto>.Ok(cached);
+
+        var transactions = await _transactionRepository.GetByUserIdAsync(userId, ct);
+        var monthTransactions = transactions.Where(t => t.Date.Year == year && t.Date.Month == month);
+
+        var report = new MonthlyReportDto
+        {
+            Year = year,
+            Month = month,
+            TotalIncome = monthTransactions.Where(t => t.Type == TransactionType.Income).Sum(t => t.Amount),
+            TotalExpense = monthTransactions.Where(t => t.Type == TransactionType.Expense).Sum(t => t.Amount),
+            NetBalance = monthTransactions.Sum(t => t.Type == TransactionType.Income ? t.Amount : -t.Amount),
+            TransactionsByCategory = monthTransactions
+                .GroupBy(t => t.CategoryId)
+                .Select(g => new CategorySummaryDto(g.Key, g.Sum(t => t.Amount)))
+                .ToList()
+        };
+
         await _cache.SetAsync(cacheKey, report, TimeSpan.FromDays(1), ct);
         return Result<MonthlyReportDto>.Ok(report);
     }
 }
 ```
 
-### Invalidation
+---
 
-- `CreateCategory` → invalidate `categories:{userId}`
-- `UpdateCategory` → invalidate `categories:{userId}`
-- `DeleteCategory` → invalidate `categories:{userId}`
+## 6. Implementação — Ordem
+
+1. Adicionar Hangfire packages NuGet
+2. Configurar Hangfire em Program.cs
+3. Implementar IDailySummaryJob + agendar
+4. Implementar IMonthlyCloseJob + agendar
+5. Implementar ICacheExpirationJob + agendar
+6. Implementar ITransactionImportService
+7. Implementar ICsvImportBackgroundJob para arquivos grandes
+8. Expandir cache para Categories
+9. Expandir cache para Reports
+10. Adicionar testes para Jobs
 
 ---
 
-## 6. Background Jobs — Retry Policy
-
-```csharp
-public class HangfireOptions
-{
-    public static void Configure(IServiceProvider serviceProvider)
-    {
-        GlobalJobFilters.Filters.Add(new AutomaticRetryAttribute
-        {
-            Attempts = 3,
-            DelaysInSeconds = new[] { 30, 60, 300 },
-            OnAttemptsExceeded = AttemptsExceededAction.Delete
-        });
-    }
-}
-```
-
----
-
-## 7. Job Scheduling UI
-
-O painel do Hangfire já provê interface para:
-- Ver jobs agendados
-- Disparar jobs manualmente
-- Ver histórico de execuções
-- Ver falhos com stack trace
-
----
-
-## 8. Implementação — Ordem
-
-1. Configurar Hangfire com PostgreSQL storage
-2. Habilitar dashboard em dev
-3. Implementar DailySummaryJob
-4. Implementar MonthlyCloseJob
-5. Implementar CacheExpirationJob
-6. Criar endpoint CSV upload
-7. Implementar CsvImportJob com retry
-8. Expandir cache para Categories e Reports
-9. Adicionar testes para jobs
-
----
-
-## 9. Out of Scope
+## 7. Out of Scope
 
 - RowVersion enforcement (Fase 4)
 - Audit log (Fase 4)
@@ -310,7 +461,7 @@ O painel do Hangfire já provê interface para:
 
 ---
 
-## 10. Dependências Novas
+## 8. Dependências Novas
 
 ```xml
 <PackageReference Include="Hangfire.Core" Version="1.8.6" />
@@ -321,11 +472,11 @@ O painel do Hangfire já provê interface para:
 
 ---
 
-## 11. Critérios de Conclusão
+## 9. Critérios de Conclusão
 
 - [ ] Hangfire dashboard acessível
 - [ ] 3 jobs recorrentes configurados
 - [ ] Importador CSV funcionando (linhas < 100 inline, > 100 async)
 - [ ] Cache para Categories e Reports
 - [ ] Retry policy configurado
-- [ ] Testes para jobs
+- [ ] Testes para Jobs

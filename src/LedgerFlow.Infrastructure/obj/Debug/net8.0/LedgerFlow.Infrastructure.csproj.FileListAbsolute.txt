@@ -1,0 +1,17 @@
+/workspace/src/LedgerFlow.Infrastructure/bin/Debug/net8.0/LedgerFlow.Infrastructure.deps.json
+/workspace/src/LedgerFlow.Infrastructure/bin/Debug/net8.0/LedgerFlow.Infrastructure.dll
+/workspace/src/LedgerFlow.Infrastructure/bin/Debug/net8.0/LedgerFlow.Infrastructure.pdb
+/workspace/src/LedgerFlow.Infrastructure/bin/Debug/net8.0/LedgerFlow.Domain.dll
+/workspace/src/LedgerFlow.Infrastructure/bin/Debug/net8.0/LedgerFlow.Shared.dll
+/workspace/src/LedgerFlow.Infrastructure/bin/Debug/net8.0/LedgerFlow.Domain.pdb
+/workspace/src/LedgerFlow.Infrastructure/bin/Debug/net8.0/LedgerFlow.Shared.pdb
+/workspace/src/LedgerFlow.Infrastructure/obj/Debug/net8.0/LedgerFlow.Infrastructure.csproj.AssemblyReference.cache
+/workspace/src/LedgerFlow.Infrastructure/obj/Debug/net8.0/LedgerFlow.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+/workspace/src/LedgerFlow.Infrastructure/obj/Debug/net8.0/LedgerFlow.Infrastructure.AssemblyInfoInputs.cache
+/workspace/src/LedgerFlow.Infrastructure/obj/Debug/net8.0/LedgerFlow.Infrastructure.AssemblyInfo.cs
+/workspace/src/LedgerFlow.Infrastructure/obj/Debug/net8.0/LedgerFlow.Infrastructure.csproj.CoreCompileInputs.cache
+/workspace/src/LedgerFlow.Infrastructure/obj/Debug/net8.0/LedgerFl.D6D24F79.Up2Date
+/workspace/src/LedgerFlow.Infrastructure/obj/Debug/net8.0/LedgerFlow.Infrastructure.dll
+/workspace/src/LedgerFlow.Infrastructure/obj/Debug/net8.0/refint/LedgerFlow.Infrastructure.dll
+/workspace/src/LedgerFlow.Infrastructure/obj/Debug/net8.0/LedgerFlow.Infrastructure.pdb
+/workspace/src/LedgerFlow.Infrastructure/obj/Debug/net8.0/ref/LedgerFlow.Infrastructure.dll

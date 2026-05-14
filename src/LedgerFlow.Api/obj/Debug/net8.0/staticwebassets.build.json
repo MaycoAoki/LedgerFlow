@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "8Q5wg6r4EbxHLI07qTvtT7U4/3DTJFpyrQVBawm+plk=",
+  "Source": "LedgerFlow.Api",
+  "BasePath": "_content/LedgerFlow.Api",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}

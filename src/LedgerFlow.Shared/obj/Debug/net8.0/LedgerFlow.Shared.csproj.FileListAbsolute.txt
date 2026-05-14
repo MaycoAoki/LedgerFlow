@@ -1,0 +1,11 @@
+/workspace/src/LedgerFlow.Shared/bin/Debug/net8.0/LedgerFlow.Shared.deps.json
+/workspace/src/LedgerFlow.Shared/bin/Debug/net8.0/LedgerFlow.Shared.dll
+/workspace/src/LedgerFlow.Shared/bin/Debug/net8.0/LedgerFlow.Shared.pdb
+/workspace/src/LedgerFlow.Shared/obj/Debug/net8.0/LedgerFlow.Shared.GeneratedMSBuildEditorConfig.editorconfig
+/workspace/src/LedgerFlow.Shared/obj/Debug/net8.0/LedgerFlow.Shared.AssemblyInfoInputs.cache
+/workspace/src/LedgerFlow.Shared/obj/Debug/net8.0/LedgerFlow.Shared.AssemblyInfo.cs
+/workspace/src/LedgerFlow.Shared/obj/Debug/net8.0/LedgerFlow.Shared.csproj.CoreCompileInputs.cache
+/workspace/src/LedgerFlow.Shared/obj/Debug/net8.0/LedgerFlow.Shared.dll
+/workspace/src/LedgerFlow.Shared/obj/Debug/net8.0/refint/LedgerFlow.Shared.dll
+/workspace/src/LedgerFlow.Shared/obj/Debug/net8.0/LedgerFlow.Shared.pdb
+/workspace/src/LedgerFlow.Shared/obj/Debug/net8.0/ref/LedgerFlow.Shared.dll

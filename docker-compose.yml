@@ -1,0 +1,112 @@
+services:
+  # ────────────────────────────────────────────
+  # API — ASP.NET Core
+  # ────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: src/Api/Dockerfile
+    container_name: ledgerflow_api
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      Redis__ConnectionString: redis:6379
+      Jwt__Secret: ${JWT_SECRET}
+      Jwt__Issuer: ${JWT_ISSUER:-ledgerflow}
+      Jwt__Audience: ${JWT_AUDIENCE:-ledgerflow-client}
+      Hangfire__Dashboard__Enabled: "true"
+    ports:
+      - "${API_PORT:-5000}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ledgerflow_net
+    volumes:
+      - api_logs:/app/logs
+
+  # ────────────────────────────────────────────
+  # Angular — Frontend (prod build served by Nginx)
+  # ────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: src/Frontend/Dockerfile
+      args:
+        API_URL: ${API_URL:-http://localhost:5000}
+    container_name: ledgerflow_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-4200}:80"
+    depends_on:
+      - api
+    networks:
+      - ledgerflow_net
+
+  # ────────────────────────────────────────────
+  # PostgreSQL 16
+  # ────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: ledgerflow_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ledgerflow}
+      POSTGRES_USER: ${POSTGRES_USER:-ledger}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ledger_secret}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ledger} -d ${POSTGRES_DB:-ledgerflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ledgerflow_net
+
+  # ────────────────────────────────────────────
+  # Redis 7
+  # ────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ledgerflow_redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_secret} --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - ledgerflow_net
+
+# ────────────────────────────────────────────
+# Volumes
+# ────────────────────────────────────────────
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  api_logs:
+    driver: local
+
+# ────────────────────────────────────────────
+# Networks
+# ────────────────────────────────────────────
+networks:
+  ledgerflow_net:
+    driver: bridge

@@ -1,0 +1,383 @@
+{
+  "format": 1,
+  "restore": {
+    "/workspace/tests/LedgerFlow.Tests/LedgerFlow.Tests.csproj": {}
+  },
+  "projects": {
+    "/workspace/src/LedgerFlow.Application/LedgerFlow.Application.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/workspace/src/LedgerFlow.Application/LedgerFlow.Application.csproj",
+        "projectName": "LedgerFlow.Application",
+        "projectPath": "/workspace/src/LedgerFlow.Application/LedgerFlow.Application.csproj",
+        "packagesPath": "/root/.nuget/packages/",
+        "outputPath": "/workspace/src/LedgerFlow.Application/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/root/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "/workspace/src/LedgerFlow.Domain/LedgerFlow.Domain.csproj": {
+                "projectPath": "/workspace/src/LedgerFlow.Domain/LedgerFlow.Domain.csproj"
+              },
+              "/workspace/src/LedgerFlow.Shared/LedgerFlow.Shared.csproj": {
+                "projectPath": "/workspace/src/LedgerFlow.Shared/LedgerFlow.Shared.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "FluentValidation.AspNetCore": {
+              "target": "Package",
+              "version": "[11.3.0, )"
+            },
+            "Microsoft.Extensions.DependencyInjection.Abstractions": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/8.0.421/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/workspace/src/LedgerFlow.Domain/LedgerFlow.Domain.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/workspace/src/LedgerFlow.Domain/LedgerFlow.Domain.csproj",
+        "projectName": "LedgerFlow.Domain",
+        "projectPath": "/workspace/src/LedgerFlow.Domain/LedgerFlow.Domain.csproj",
+        "packagesPath": "/root/.nuget/packages/",
+        "outputPath": "/workspace/src/LedgerFlow.Domain/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/root/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "/workspace/src/LedgerFlow.Shared/LedgerFlow.Shared.csproj": {
+                "projectPath": "/workspace/src/LedgerFlow.Shared/LedgerFlow.Shared.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/8.0.421/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/workspace/src/LedgerFlow.Infrastructure/LedgerFlow.Infrastructure.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/workspace/src/LedgerFlow.Infrastructure/LedgerFlow.Infrastructure.csproj",
+        "projectName": "LedgerFlow.Infrastructure",
+        "projectPath": "/workspace/src/LedgerFlow.Infrastructure/LedgerFlow.Infrastructure.csproj",
+        "packagesPath": "/root/.nuget/packages/",
+        "outputPath": "/workspace/src/LedgerFlow.Infrastructure/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/root/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "/workspace/src/LedgerFlow.Domain/LedgerFlow.Domain.csproj": {
+                "projectPath": "/workspace/src/LedgerFlow.Domain/LedgerFlow.Domain.csproj"
+              },
+              "/workspace/src/LedgerFlow.Shared/LedgerFlow.Shared.csproj": {
+                "projectPath": "/workspace/src/LedgerFlow.Shared/LedgerFlow.Shared.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "Microsoft.AspNetCore.Identity.EntityFrameworkCore": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            },
+            "Microsoft.EntityFrameworkCore": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            },
+            "Npgsql.EntityFrameworkCore.PostgreSQL": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            },
+            "StackExchange.Redis": {
+              "target": "Package",
+              "version": "[2.7.10, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/8.0.421/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/workspace/src/LedgerFlow.Shared/LedgerFlow.Shared.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/workspace/src/LedgerFlow.Shared/LedgerFlow.Shared.csproj",
+        "projectName": "LedgerFlow.Shared",
+        "projectPath": "/workspace/src/LedgerFlow.Shared/LedgerFlow.Shared.csproj",
+        "packagesPath": "/root/.nuget/packages/",
+        "outputPath": "/workspace/src/LedgerFlow.Shared/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/root/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/8.0.421/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/workspace/tests/LedgerFlow.Tests/LedgerFlow.Tests.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/workspace/tests/LedgerFlow.Tests/LedgerFlow.Tests.csproj",
+        "projectName": "LedgerFlow.Tests",
+        "projectPath": "/workspace/tests/LedgerFlow.Tests/LedgerFlow.Tests.csproj",
+        "packagesPath": "/root/.nuget/packages/",
+        "outputPath": "/workspace/tests/LedgerFlow.Tests/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/root/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "/workspace/src/LedgerFlow.Application/LedgerFlow.Application.csproj": {
+                "projectPath": "/workspace/src/LedgerFlow.Application/LedgerFlow.Application.csproj"
+              },
+              "/workspace/src/LedgerFlow.Domain/LedgerFlow.Domain.csproj": {
+                "projectPath": "/workspace/src/LedgerFlow.Domain/LedgerFlow.Domain.csproj"
+              },
+              "/workspace/src/LedgerFlow.Infrastructure/LedgerFlow.Infrastructure.csproj": {
+                "projectPath": "/workspace/src/LedgerFlow.Infrastructure/LedgerFlow.Infrastructure.csproj"
+              },
+              "/workspace/src/LedgerFlow.Shared/LedgerFlow.Shared.csproj": {
+                "projectPath": "/workspace/src/LedgerFlow.Shared/LedgerFlow.Shared.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "FluentAssertions": {
+              "target": "Package",
+              "version": "[6.12.0, )"
+            },
+            "Microsoft.NET.Test.Sdk": {
+              "target": "Package",
+              "version": "[17.8.0, )"
+            },
+            "Moq": {
+              "target": "Package",
+              "version": "[4.20.70, )"
+            },
+            "coverlet.collector": {
+              "target": "Package",
+              "version": "[6.0.0, )"
+            },
+            "xunit": {
+              "target": "Package",
+              "version": "[2.5.3, )"
+            },
+            "xunit.runner.visualstudio": {
+              "target": "Package",
+              "version": "[2.5.3, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/8.0.421/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

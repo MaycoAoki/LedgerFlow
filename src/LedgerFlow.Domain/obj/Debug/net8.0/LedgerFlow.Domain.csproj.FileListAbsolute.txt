@@ -1,0 +1,15 @@
+/workspace/src/LedgerFlow.Domain/bin/Debug/net8.0/LedgerFlow.Domain.deps.json
+/workspace/src/LedgerFlow.Domain/bin/Debug/net8.0/LedgerFlow.Domain.dll
+/workspace/src/LedgerFlow.Domain/bin/Debug/net8.0/LedgerFlow.Domain.pdb
+/workspace/src/LedgerFlow.Domain/bin/Debug/net8.0/LedgerFlow.Shared.dll
+/workspace/src/LedgerFlow.Domain/bin/Debug/net8.0/LedgerFlow.Shared.pdb
+/workspace/src/LedgerFlow.Domain/obj/Debug/net8.0/LedgerFlow.Domain.csproj.AssemblyReference.cache
+/workspace/src/LedgerFlow.Domain/obj/Debug/net8.0/LedgerFlow.Domain.GeneratedMSBuildEditorConfig.editorconfig
+/workspace/src/LedgerFlow.Domain/obj/Debug/net8.0/LedgerFlow.Domain.AssemblyInfoInputs.cache
+/workspace/src/LedgerFlow.Domain/obj/Debug/net8.0/LedgerFlow.Domain.AssemblyInfo.cs
+/workspace/src/LedgerFlow.Domain/obj/Debug/net8.0/LedgerFlow.Domain.csproj.CoreCompileInputs.cache
+/workspace/src/LedgerFlow.Domain/obj/Debug/net8.0/LedgerFl.EEF1B234.Up2Date
+/workspace/src/LedgerFlow.Domain/obj/Debug/net8.0/LedgerFlow.Domain.dll
+/workspace/src/LedgerFlow.Domain/obj/Debug/net8.0/refint/LedgerFlow.Domain.dll
+/workspace/src/LedgerFlow.Domain/obj/Debug/net8.0/LedgerFlow.Domain.pdb
+/workspace/src/LedgerFlow.Domain/obj/Debug/net8.0/ref/LedgerFlow.Domain.dll

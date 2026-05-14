@@ -1,0 +1,17 @@
+/workspace/src/LedgerFlow.Application/bin/Debug/net8.0/LedgerFlow.Application.deps.json
+/workspace/src/LedgerFlow.Application/bin/Debug/net8.0/LedgerFlow.Application.dll
+/workspace/src/LedgerFlow.Application/bin/Debug/net8.0/LedgerFlow.Application.pdb
+/workspace/src/LedgerFlow.Application/bin/Debug/net8.0/LedgerFlow.Domain.dll
+/workspace/src/LedgerFlow.Application/bin/Debug/net8.0/LedgerFlow.Shared.dll
+/workspace/src/LedgerFlow.Application/bin/Debug/net8.0/LedgerFlow.Domain.pdb
+/workspace/src/LedgerFlow.Application/bin/Debug/net8.0/LedgerFlow.Shared.pdb
+/workspace/src/LedgerFlow.Application/obj/Debug/net8.0/LedgerFlow.Application.csproj.AssemblyReference.cache
+/workspace/src/LedgerFlow.Application/obj/Debug/net8.0/LedgerFlow.Application.GeneratedMSBuildEditorConfig.editorconfig
+/workspace/src/LedgerFlow.Application/obj/Debug/net8.0/LedgerFlow.Application.AssemblyInfoInputs.cache
+/workspace/src/LedgerFlow.Application/obj/Debug/net8.0/LedgerFlow.Application.AssemblyInfo.cs
+/workspace/src/LedgerFlow.Application/obj/Debug/net8.0/LedgerFlow.Application.csproj.CoreCompileInputs.cache
+/workspace/src/LedgerFlow.Application/obj/Debug/net8.0/LedgerFl.C1207FE1.Up2Date
+/workspace/src/LedgerFlow.Application/obj/Debug/net8.0/LedgerFlow.Application.dll
+/workspace/src/LedgerFlow.Application/obj/Debug/net8.0/refint/LedgerFlow.Application.dll
+/workspace/src/LedgerFlow.Application/obj/Debug/net8.0/LedgerFlow.Application.pdb
+/workspace/src/LedgerFlow.Application/obj/Debug/net8.0/ref/LedgerFlow.Application.dll

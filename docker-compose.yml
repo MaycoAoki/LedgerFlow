@@ -5,7 +5,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: src/Api/Dockerfile
+      dockerfile: docker/api.Dockerfile
     container_name: ledgerflow_api
     restart: unless-stopped
     environment:
@@ -30,22 +30,22 @@ services:
       - api_logs:/app/logs
 
   # ────────────────────────────────────────────
-  # Angular — Frontend (prod build served by Nginx)
+  # Angular — Frontend (TODO: implement in Phase 2)
   # ────────────────────────────────────────────
-  frontend:
-    build:
-      context: .
-      dockerfile: src/Frontend/Dockerfile
-      args:
-        API_URL: ${API_URL:-http://localhost:5000}
-    container_name: ledgerflow_frontend
-    restart: unless-stopped
-    ports:
-      - "${FRONTEND_PORT:-4200}:80"
-    depends_on:
-      - api
-    networks:
-      - ledgerflow_net
+  # frontend:
+  #   build:
+  #     context: .
+  #     dockerfile: src/Frontend/Dockerfile
+  #     args:
+  #       API_URL: ${API_URL:-http://localhost:5000}
+  #   container_name: ledgerflow_frontend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "${FRONTEND_PORT:-4200}:80"
+  #   depends_on:
+  #     - api
+  #   networks:
+  #     - ledgerflow_net
 
   # ────────────────────────────────────────────
   # PostgreSQL 16

@@ -15,7 +15,7 @@ This document covers the scaffolding of the LedgerFlow backend and the complete 
 - Transactions (Income, Expense, Transfer)
 - Dashboard (summary with caching)
 
-Phase 2 (CQRS hardening), Phase 3 (async jobs/CSV), and Phase 4 (optimistic concurrency/audit) are out of scope here but the architecture is designed to accommodate them.
+Phase 2 (Enterprise Architecture), Phase 3 (async jobs/CSV), and Phase 4 (optimistic concurrency/audit) are out of scope here but the architecture is designed to accommodate them.
 
 ---
 
@@ -25,13 +25,13 @@ Phase 2 (CQRS hardening), Phase 3 (async jobs/CSV), and Phase 4 (optimistic conc
 LedgerFlow.sln
 src/
 ├── LedgerFlow.Api/                  # ASP.NET Core Web API — entry point, controllers, middleware, DI
-├── LedgerFlow.Application/          # Commands, Queries, Handlers, Validators (MediatR + FluentValidation)
-├── LedgerFlow.Domain/               # Entities, Value Objects, Repository Interfaces, Domain Events
-├── LedgerFlow.Infrastructure/       # EF Core DbContext, Repositories, Redis, Hangfire
-└── LedgerFlow.Shared/               # Result<T>, Error, PagedResult — no internal dependencies
+├── LedgerFlow.Application/          # DTOs, Request/Response models, Interfaces de Services
+├── LedgerFlow.Domain/               # Entities, Enums, Repository Interfaces
+├── LedgerFlow.Infrastructure/       # EF Core DbContext, Repositories, Redis
+└── LedgerFlow.Shared/               # Result<T>, Error — no internal dependencies
 
 tests/
-├── LedgerFlow.Unit.Tests/           # Handlers and validators (xUnit + Moq + FluentAssertions)
+├── LedgerFlow.Unit.Tests/           # Services e Validators (xUnit + Moq + FluentAssertions)
 └── LedgerFlow.Integration.Tests/    # Endpoint tests (TestContainers + WebApplicationFactory)
 ```
 
@@ -176,7 +176,7 @@ Registered via `AddHangfire()` + `AddHangfireServer()` in DI. No concrete jobs i
 
 ---
 
-## 6. Application Layer
+## 6. Application Layer (Services)
 
 **Location:** `src/LedgerFlow.Application/`
 
@@ -184,42 +184,31 @@ Registered via `AddHangfire()` + `AddHangfireServer()` in DI. No concrete jobs i
 
 ```
 Application/
-├── Auth/
-│   ├── Commands/Register/  → RegisterCommand, RegisterCommandHandler, RegisterCommandValidator
-│   ├── Commands/Login/     → LoginCommand, LoginCommandHandler
-│   ├── Commands/RefreshToken/ → RefreshTokenCommand, RefreshTokenCommandHandler
-│   └── Commands/ForgotPassword/ → ForgotPasswordCommand, ForgotPasswordCommandHandler
-├── Accounts/
-│   ├── Commands/CreateAccount/
-│   ├── Commands/UpdateAccount/
-│   ├── Commands/DeleteAccount/
-│   ├── Queries/GetAccountById/
-│   └── Queries/GetAllAccounts/
-├── Transactions/
-│   ├── Commands/CreateTransaction/
-│   ├── Commands/UpdateTransaction/
-│   ├── Commands/DeleteTransaction/
-│   ├── Queries/GetTransactionById/
-│   ├── Queries/GetAllTransactions/
-│   └── Queries/GetTransactionsByAccount/
-├── Dashboard/
-│   └── Queries/GetDashboardSummary/  → checks Redis first, falls back to DB
-└── Common/
-    └── Behaviors/ValidationBehavior.cs  → MediatR IPipelineBehavior, runs FluentValidation
+├── DTOs/                    # Request e Response models
+├── Interfaces/             # Interfaces dos Services
+│   ├── IAuthService.cs
+│   ├── IAccountService.cs
+│   ├── ITransactionService.cs
+│   └── IDashboardService.cs
+└── Services/               # Implementações
+    ├── AuthService.cs
+    ├── AccountService.cs
+    ├── TransactionService.cs
+    └── DashboardService.cs
 ```
 
 ### Conventions
 
-- Each Command/Query lives in its own folder with three files: request, handler, validator (where applicable).
-- Handlers inject repository interfaces and `IUnitOfWork` — never `AppDbContext` directly.
-- `ValidationBehavior<TRequest, TResponse>` is registered as a pipeline behavior before all handlers.
-- FluentValidation validators use `AbstractValidator<TCommand>`.
+- Services seguem o padrão de injeção de dependência.
+- Cada Service recebe as interfaces de Repository e IUnitOfWork via construtor.
+- Validação básica feita diretamente nos Services (FluentValidation será adicionado na Fase 2).
+- Todos os Services retornam `Result<T>` para tratamento consistente de erros.
 
 ### Dashboard caching
 
-`GetDashboardSummaryHandler` attempts `IRedisCacheService.GetAsync<DashboardSummary>(key)` first. On cache miss, queries the DB and calls `SetAsync` with a 5-minute TTL. Cache key pattern: `ledgerflow:dashboard:{userId}:summary`.
+`DashboardService.GetSummaryAsync` tenta `IRedisCacheService.GetAsync<DashboardSummary>(key)` primeiro. No caso de cache miss, consulta o DB e chama `SetAsync` com TTL de 5 minutos. Padrão de chave: `ledgerflow:dashboard:{userId}:summary`.
 
-Cache invalidation: `CreateTransactionHandler`, `UpdateTransactionHandler`, `DeleteTransactionHandler`, `CreateAccountHandler`, `UpdateAccountHandler`, and `DeleteAccountHandler` call `IRedisCacheService.RemoveAsync(key)` after `IUnitOfWork.CommitAsync()` succeeds.
+Invalidation de cache: Os métodos Create/Update/Delete de Transactions e Accounts chamam `IRedisCacheService.RemoveAsync(key)` após o `IUnitOfWork.CommitAsync()` ter sucesso.
 
 ---
 
@@ -237,7 +226,7 @@ Controllers/
 └── DashboardController.cs   → GET /api/dashboard/summary
 ```
 
-All controllers are `[ApiController]`, receive `IMediator` via constructor injection, call the appropriate command/query, and map `Result<T>` to HTTP responses.
+All controllers are `[ApiController]`, receive the appropriate Service interface via constructor injection, call the service method, and map `Result<T>` to HTTP responses.
 
 ### Middleware
 
@@ -249,8 +238,8 @@ Middleware/
 ### DI Registration
 
 Feature-based extension methods in `Extensions/ServiceCollectionExtensions.cs`:
-- `AddApplication()` — registers MediatR, FluentValidation, pipeline behaviors
-- `AddInfrastructure(config)` — registers EF Core, Redis, Hangfire, repositories, UoW
+- `AddApplication()` — registers Services (IAuthService, IAccountService, etc.)
+- `AddInfrastructure(config)` — registers EF Core, Redis, repositories, UoW
 - `AddAuth(config)` — registers Identity, JWT Bearer
 
 `Program.cs` calls these and is kept minimal.
@@ -286,10 +275,9 @@ Tools: `xUnit`, `Moq`, `FluentAssertions`
 
 ```
 Unit.Tests/
-├── Auth/         → RegisterCommandHandlerTests, LoginCommandHandlerTests
-├── Accounts/     → CreateAccountHandlerTests, UpdateAccountHandlerTests
-├── Transactions/ → CreateTransactionHandlerTests
-└── Shared/       → ResultTests, ValidationBehaviorTests
+├── Services/     → AuthServiceTests, AccountServiceTests, TransactionServiceTests
+├── Validators/   → RegisterRequestValidatorTests (Fase 2)
+└── Shared/       → ResultTests
 ```
 
 Each test class covers: happy path, validation failure, not found, domain rule violation.
@@ -379,7 +367,7 @@ volumes:
 
 ## 11. Out of Scope (Future Phases)
 
-- CQRS hardening (Phase 2): full read/write model separation, query projections
+- Enterprise Architecture (Phase 2): FluentValidation, Logging, Global Exception Handler, Tests
 - CSV import (Phase 3): file upload, parsing, Hangfire job
 - Monthly close job (Phase 3)
 - Redis cache for reports and categories (Phase 3)

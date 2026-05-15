@@ -5,24 +5,24 @@
 - Entity Framework Core
 - PostgreSQL
 - Redis
-- MediatR
 - FluentValidation
+- Hangfire
 - xUnit
 
 ## Estrutura
 
 ```txt
 src/
-├── Api/
-├── Application/
-├── Domain/
-├── Infrastructure/
-└── Shared/
+├── LedgerFlow.Api/
+├── LedgerFlow.Application/
+├── LedgerFlow.Domain/
+├── LedgerFlow.Infrastructure/
+└── LedgerFlow.Shared/
 ```
 
 ## Conceitos
 - Clean Architecture
-- CQRS
-- Domain Events
+- MVC + Services + Repositories
 - Repository Pattern
 - Unit of Work
+- Result<T> Pattern

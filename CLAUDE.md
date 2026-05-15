@@ -10,24 +10,24 @@ The codebase does not exist yet — planning docs live in `ledgerflow_markdowns/
 
 ## Planned Tech Stack
 
-**Backend**: C# / ASP.NET Core, Entity Framework Core, PostgreSQL, Redis, MediatR, FluentValidation, Hangfire, xUnit  
+**Backend**: C# / ASP.NET Core, Entity Framework Core, PostgreSQL, Redis, FluentValidation, Hangfire, xUnit  
 **Frontend**: Angular, RxJS, Angular Signals, Angular Material, Chart.js  
 **Infrastructure**: Docker (API, PostgreSQL, Redis, Angular containers)
 
 ## Backend Architecture
 
-Clean Architecture with CQRS. Planned project layout:
+Clean Architecture with MVC + Services + Repositories. Project layout:
 
 ```
 src/
-├── Api/            # Controllers, middleware, DI composition root
-├── Application/    # Commands, queries, handlers (MediatR), validators (FluentValidation)
-├── Domain/         # Entities, domain events, repository interfaces, value objects
-├── Infrastructure/ # EF Core DbContext, repository implementations, Redis, Hangfire
-└── Shared/         # Cross-cutting helpers (Result type, pagination, etc.)
+├── LedgerFlow.Api/              # Controllers, middleware, DI composition root
+├── LedgerFlow.Application/     # DTOs, Service interfaces
+├── LedgerFlow.Domain/           # Entities, Enums, Repository interfaces
+├── LedgerFlow.Infrastructure/   # EF Core DbContext, Repositories, Redis
+└── LedgerFlow.Shared/          # Helpers (Result<T>, Error)
 ```
 
-Key patterns: Repository + Unit of Work, Domain Events, Optimistic Concurrency (RowVersion).
+Key patterns: Repository + Unit of Work, Result<T> Pattern, Dependency Injection.
 
 ## Frontend Architecture
 
@@ -49,7 +49,7 @@ Core entities: `User` (Id, Name, Email), `Account` (Id, UserId, Balance), `Trans
 ## Roadmap Phases
 
 1. **MVP**: Auth (register/login/refresh/password reset), Accounts CRUD, Transactions (income/expense/transfer), Dashboard
-2. **Enterprise patterns**: CQRS with MediatR, FluentValidation, unit + integration tests
+2. **Enterprise patterns**: FluentValidation, Logging centralizado, Global exception handler, unit + integration tests
 3. **Async processing**: Hangfire jobs, CSV importer, Redis caching (dashboard, reports, categories)
 4. **Concurrency**: RowVersion optimistic concurrency, audit log
 

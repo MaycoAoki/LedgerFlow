@@ -3,7 +3,7 @@
 **Date:** 2026-05-14
 **Phase:** 2/4
 **Prerequisite:** Fase 1 (MVP) completa
-**Arquitetura:** MVC + Services + Repositories (expansão)
+**Arquitetura:** MVC + Services + Repositories (expansão com FluentValidation, Logging e Tests)
 
 ---
 

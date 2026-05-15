@@ -2046,7 +2046,8 @@
         "type": "project",
         "framework": ".NETCoreApp,Version=v8.0",
         "dependencies": {
-          "LedgerFlow.Shared": "1.0.0"
+          "LedgerFlow.Shared": "1.0.0",
+          "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "8.0.0"
         },
         "compile": {
           "bin/placeholder/LedgerFlow.Domain.dll": {}

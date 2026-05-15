@@ -740,7 +740,8 @@
       },
       "LedgerFlow.Domain/1.0.0": {
         "dependencies": {
-          "LedgerFlow.Shared": "1.0.0"
+          "LedgerFlow.Shared": "1.0.0",
+          "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "8.0.0"
         },
         "runtime": {
           "LedgerFlow.Domain.dll": {

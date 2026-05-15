@@ -1,1 +1,26 @@
 .env
+
+# .NET
+bin/
+obj/
+*.dll
+*.exe
+.vs/
+*.user
+*.suo
+
+# Node/Angular
+node_modules/
+dist/
+angular.json.angular-cache
+
+# IDEs
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
